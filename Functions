@@ -1,0 +1,67 @@
+from bs4 import BeautifulSoup, NavigableString, Tag
+import pandas as pd
+import requests
+
+
+def get_page_content(link):
+    webpage_response = requests.get(link)
+    ep_page = webpage_response.content
+    info = BeautifulSoup(ep_page, "html.parser")
+    return info
+
+
+
+def get_scraped_draft_link(league, draft_type, year):
+    info = get_page_content("https://www.eliteprospects.com/draft/nhl-entry-draft")
+    columns = info.find(attrs={"column-4"})
+    links_to_leagues = columns.find_all("a")
+    full_draft = " %s %s  " %(league.lower(), draft_type.lower())
+    league_dict = {}
+    for a in links_to_leagues:
+        league_dict[a.get_text().lower()] = a['href']
+    draft_league_year = league_dict[full_draft]
+    draft_year = get_page_content(draft_league_year)
+    columns = draft_year.find(attrs={"column-6"})
+    link_to_drafts = columns.find_all("a")
+    draft_dict = {}
+    year = " " + year + " "
+    for a in link_to_drafts:
+        draft_dict[a.get_text()] = a['href']
+    return draft_dict[year]
+
+
+def data_scraper(league, draft_type, year):
+    info = get_page_content(get_scraped_draft_link(league, draft_type, year))
+    table = info.find(attrs={"table table-striped players table-sortable highlight-stats"})
+    title_classes = table.find_all(attrs={"title"})
+    row_list = table.find_all("tr")
+    raw_draft_list = []
+    for tr in row_list:
+        if tr in title_classes:
+            pass
+        else:
+            raw_draft_list.append(tr)
+    del raw_draft_list[0]
+    raw_player_stats = []
+    for tr in raw_draft_list:
+        stat_row = []
+        stats = tr.find_all("td")
+        for td in stats:
+            stat = (td.get_text())
+            stat_row.append(stat)
+        raw_player_stats.append(stat_row)
+    draft_list = []
+    for element in raw_player_stats:
+        del element[1]
+        player = []
+        for y in element:
+            player.append(y.strip())
+        draft_list.append(player)
+    return draft_list
+    
+    def draft_scrapter(league, draft_type, year):
+    draft_list = data_scraper(league, draft_type, year)
+    draft_data = pd.DataFrame(draft_list, columns = ["Selection", "Team", "Player", "NHL Seasons", "Games Played", "Goals", "Assists", "Points", "PIM"])
+    print(draft_data)
+
+
