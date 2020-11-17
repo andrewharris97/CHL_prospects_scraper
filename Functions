@@ -59,9 +59,9 @@ def data_scraper(league, draft_type, year):
         draft_list.append(player)
     return draft_list
     
-    def draft_scrapter(league, draft_type, year):
-        draft_list = data_scraper(league, draft_type, year)
-        draft_data = pd.DataFrame(draft_list, columns = ["Selection", "Team", "Player", "NHL Seasons", "Games Played", "Goals", "Assists", "Points", "PIM"])
-        print(draft_data)
+def draft_scrapter(league, draft_type, year):
+    draft_list = data_scraper(league, draft_type, year)
+    draft_data = pd.DataFrame(draft_list, columns = ["Selection", "Team", "Player", "NHL Seasons", "Games Played", "Goals", "Assists", "Points", "PIM"])
+    print(draft_data)
 
 
