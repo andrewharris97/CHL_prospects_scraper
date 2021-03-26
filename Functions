@@ -1,67 +1,170 @@
-from bs4 import BeautifulSoup, NavigableString, Tag
-import pandas as pd
+#######################################################
+#           Elite Prospects Python Scraper            #
+#######################################################
+
+####### Dependancies
+# OS, BeautifulSoup, Requests
+
 import requests
+import os
+from bs4 import BeautifulSoup
+import pandas as pd
+import numpy as np
+
+# Sets up a link for scrapping - used throughout project 
+def link_scraper(link):
+    source = requests.get(link)
+    return BeautifulSoup(source.text, "html.parser")
+
+###### Used to retrieve the correct link based on season and league
+def link_builder(league, season):
+    link = 'https://www.eliteprospects.com/league/%s/stats/%s'%(league, season)
+    return link
 
 
-def get_page_content(link):
-    webpage_response = requests.get(link)
-    ep_page = webpage_response.content
-    info = BeautifulSoup(ep_page, "html.parser")
-    return info
+### Used to switch pages within a league's season
+def page_retriever(link):
+    links = [link]
+    more = True
+    while more == True:
+        more = False
+        soup = link_scraper(link)
+        hyper = soup.find("div", class_="table-pagination").find_all("a")
+        for a in hyper:
+            if a.get_text() == "Next page":
+                link = a["href"]
+                links.append(link)
+                more = True
+    return links
+#Also redundant throughout project. I don't know how to do Kwargs yet hence replace.
+def text(row, tag, classes, replace):
+    if replace == "replace":
+        return row.find(tag, class_=classes).get_text().replace("\n", "")
+    else:
+        return row.find(tag, class_=classes).get_text().strip()
+        
+        
+#############################################################################################################################
+# EP puts birthdate, height, and NHL information on a seperate page. This function is intended to access each player's
+# hyperlink, extract the relevant data, and add that data to a corresponding vector. Note that some rows on EP are "nameless"
+# based on player trades through the year. Trying to scrape a non-existent data-cell results in an AttributeError, so exceptions 
+# are used to bypass if applicable.
+#############################################################################################################################  
+def height_and_chel(row):
+    link = row.find("a")
+    link = link['href']
+    sou_p = link_scraper(link)
+    classes = sou_p.find("div", class_="ep-container mt-4")
+    height = classes.find("div", class_="order-6 order-sm-3 ep-list__item ep-list__item--col-2 ep-list__item--in-card-body ep-list__item--is-compact")
+    height = height.find("div", class_="col-xs-12 col-18 text-right p-0 ep-text-color--black").get_text().strip()
+    age = classes.find("div", class_ = "order-0 order-sm-0 ep-list__item ep-list__item--col-2 ep-list__item--in-card-body ep-list__item--is-compact")
+    age = age.find("div", class_ = "col-xs-12 col-17 text-right p-0 ep-text-color--black").get_text().strip()
+    try:
+        league_stats = classes.find("div", {"id": "league-stats"})
+        rows = league_stats.find_all("tr")
+        nhl_data = []
+        games_played = 0
+        goals = 0
+        assists = 0
+        total_points = 0
+        for row in rows:
+            try: 
+                if text(row, "td", "league", "strip") == "NHL":
+                    games_played += int(float(text(row, "td", "regular gp", "strip")))
+                    goals += int(float(text(row, "td", "regular g", "strip")))
+                    assists += int(float(text(row, "td", "regular a", "strip")))
+                    total_points += int(float(text(row, "td", "regular tp", "strip")))
+                else:
+                    pass
+            except (AttributeError, ValueError):
+                pass
+        nhl_data.extend([age, height, games_played, goals, assists, total_points])
+        return nhl_data
+    except AttributeError:
+        return [age, height, "", "", "", ""]
 
 
+#####################################################################################################
+# This is the main portion of the scraper. It takes a league and a season, and scrapes the data for 
+# height, age, games played, goals, assists, points per game, and NHL totals.
+#####################################################################################################
 
-def get_scraped_draft_link(league, draft_type, year):
-    info = get_page_content("https://www.eliteprospects.com/draft/nhl-entry-draft")
-    columns = info.find(attrs={"column-4"})
-    links_to_leagues = columns.find_all("a")
-    full_draft = " %s %s  " %(league.lower(), draft_type.lower())
-    league_dict = {}
-    for a in links_to_leagues:
-        league_dict[a.get_text().lower()] = a['href']
-    draft_league_year = league_dict[full_draft]
-    draft_year = get_page_content(draft_league_year)
-    columns = draft_year.find(attrs={"column-6"})
-    link_to_drafts = columns.find_all("a")
-    draft_dict = {}
-    year = " " + year + " "
-    for a in link_to_drafts:
-        draft_dict[a.get_text()] = a['href']
-    return draft_dict[year]
-
-
-def data_scraper(league, draft_type, year):
-    info = get_page_content(get_scraped_draft_link(league, draft_type, year))
-    table = info.find(attrs={"table table-striped players table-sortable highlight-stats"})
-    title_classes = table.find_all(attrs={"title"})
-    row_list = table.find_all("tr")
-    raw_draft_list = []
-    for tr in row_list:
-        if tr in title_classes:
-            pass
-        else:
-            raw_draft_list.append(tr)
-    del raw_draft_list[0]
-    raw_player_stats = []
-    for tr in raw_draft_list:
-        stat_row = []
-        stats = tr.find_all("td")
-        for td in stats:
-            stat = (td.get_text())
-            stat_row.append(stat)
-        raw_player_stats.append(stat_row)
-    draft_list = []
-    for element in raw_player_stats:
-        del element[1]
-        player = []
-        for y in element:
-            player.append(y.strip())
-        draft_list.append(player)
-    return draft_list
+def scrape(league, year):
+    season = {}
+    players = []
+    teams = []
+    games_played =[]
+    goals = []
+    assists = []
+    points = []
+    ppg = []
+    height = []
+    age = []
+    nhl_gp = []
+    nhl_goals = []
+    nhl_assists = []
+    nhl_tp = []
+    link = link_builder(league, year)
+    pages = page_retriever(link)
+    for i in pages:
+        soup = link_scraper(i)
+        table = soup.find("div", {"id": "skater-stats"})
+        rows = table.find_all("tr", class_= None)
+        for row in rows[1:]:
+            try:
+                player = text(row, "td", "player", "replace")
+                if player =="\xa0":
+                    pass
+                else:
+                    players.append(player)
+                    team = text(row, "td", "team", "strip")
+                    teams.append(team)
+                    gp = text(row, "td", "gp", "strip")
+                    games_played.append(gp)
+                    g = text(row, "td", "g", "strip")
+                    goals.append(g)
+                    a = text(row, "td", "a", "strip")
+                    assists.append(a)
+                    p = text(row, "td", "tp sorted", "strip")
+                    points.append(p )
+                    pointspergame = text(row, "td", "ppg", "strip")
+                    ppg.append(pointspergame)
+                    nhl_data = height_and_chel(row)
+                    age.append(nhl_data[0])
+                    height.append(nhl_data[1])
+                    nhl_gp.append(nhl_data[2])
+                    nhl_goals.append(nhl_data[3])
+                    nhl_assists.append(nhl_data[4])
+                    nhl_tp.append(nhl_data[5])          
+            except AttributeError:
+                team = text(row, "td", "team", "strip")
+                teams.append(team)
+                gp = text(row, "td", "gp", "strip")
+                games_played.append(gp)
+                g = text(row, "td", "g", "strip")
+                goals.append(g)
+                a = text(row, "td", "a", "strip")
+                assists.append(a)
+                p = text(row, "td", "tp sorted", "strip")
+                points.append(p)
+                height.append("")
+                age.append("")
+                nhl_gp.append("")
+                nhl_goals.append("")
+                nhl_assists.append("")
+                nhl_tp.append("")
+                pointspergame = text(row, "td", "ppg", "strip")
+                ppg.append(pointspergame)
+                players.append("")
+    season = {"player": players, "teams": teams, "games_played": games_played, "goals":goals, "assists":assists, "points":points, "ppg": ppg, "age": age, "height":height, "nhl_gp":nhl_gp,"nhl_goals":nhl_goals,
+         "nhl_assists":nhl_assists,"nhl_tp":nhl_tp, "league": league, "season": year}
+    return season
     
-def draft_scrapter(league, draft_type, year):
-    draft_list = data_scraper(league, draft_type, year)
-    draft_data = pd.DataFrame(draft_list, columns = ["Selection", "Team", "Player", "NHL Seasons", "Games Played", "Goals", "Assists", "Points", "PIM"])
-    print(draft_data)
+#####################################################
+# 
+# An extra few functions for Pandas manipulation
+#
+#####################################################
 
-
+def df_converter(league_dict):
+    return pd.DataFrame.from_dict(league_dict)
