@@ -22,7 +22,7 @@ def link_builder(league, season):
     return link
 
 
-### Used to switch pages within a league's season
+####### Used to switch pages within a league's season
 def page_retriever(link):
     links = [link]
     more = True
@@ -36,7 +36,9 @@ def page_retriever(link):
                 links.append(link)
                 more = True
     return links
-#Also redundant throughout project. I don't know how to do Kwargs yet hence replace.
+    
+    
+#####Also redundant throughout project. I did the replace portion because I haven't looked into Kwargs yet
 def text(row, tag, classes, replace):
     if replace == "replace":
         return row.find(tag, class_=classes).get_text().replace("\n", "")
@@ -50,6 +52,7 @@ def text(row, tag, classes, replace):
 # based on player trades through the year. Trying to scrape a non-existent data-cell results in an AttributeError, so exceptions 
 # are used to bypass if applicable.
 #############################################################################################################################  
+
 def height_and_chel(row):
     link = row.find("a")
     link = link['href']
