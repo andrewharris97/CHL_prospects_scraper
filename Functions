@@ -1,28 +1,100 @@
-#######################################################
-#           Elite Prospects Python Scraper            #
-#######################################################
-
-####### Dependancies
-# OS, BeautifulSoup, Requests
-
+###################################################################
+#Dependancies : json, requests, os, pandas, numpy, beautifulsoup, regex, datetime
+##################################################################
+import json
 import requests
-import os
-from bs4 import BeautifulSoup
 import pandas as pd
 import numpy as np
+from bs4 import BeautifulSoup
+import os
+import re
+from datetime import datetime
+###################################################################
+# Base links: 
+# Elite Prospects league scoring:
+# OHL Game by game: 
+####################################################################
 
-# Sets up a link for scrapping - used throughout project 
+
+def ep_data(league, season):
+    link = link_builder(league, season)
+    players = []
+    teams = []
+    leagues = []
+    date_of_birth = []
+    height = []
+    nhl_games_played = []
+    nhl_goals  = []
+    nhl_assists = []
+    nhl_total_points = []
+    seasons = []
+    pages = page_retriever(link)
+    for i in pages:
+        soup = link_scraper(i)
+        table = soup.find("div", {"id": "skater-stats"})
+        rows = table.find_all("tr", class_= None)
+        for row in rows[1:]:
+            try:
+                link = row.find("a")
+                link = link['href']
+                sou_p = link_scraper(link)
+                classes = sou_p.find("div", class_="ep-container mt-4")
+                heights = classes.find("div", class_="order-6 order-sm-3 ep-list__item ep-list__item--col-2 ep-list__item--in-card-body ep-list__item--is-compact")
+                heights = heights.find("div", class_="col-xs-12 col-18 text-right p-0 ep-text-color--black").get_text().strip()
+                age = classes.find("div", class_ = "order-0 order-sm-0 ep-list__item ep-list__item--col-2 ep-list__item--in-card-body ep-list__item--is-compact")
+                age = age.find("div", class_ = "col-xs-12 col-17 text-right p-0 ep-text-color--black").get_text().strip()
+                try:
+                    league_stats = classes.find("div", {"id": "league-stats"})
+                    rows = league_stats.find_all("tr")
+                    player = text(row, "td", "player", "replace")
+                    phrase = "Scraping %s"%(player)
+                    print(phrase)
+                    if player =="\xa0":
+                        pass
+                    players.append(player)
+                    games_played = 0
+                    goals = 0
+                    assists = 0
+                    total_points = 0
+                    for row in rows:
+                        try: 
+                            if text(row, "td", "league", "strip") == "NHL":
+                                games_played += int(float(text(row, "td", "regular gp", "strip")))
+                                goals += int(float(text(row, "td", "regular g", "strip")))
+                                assists += int(float(text(row, "td", "regular a", "strip")))
+                                total_points += int(float(text(row, "td", "regular tp", "strip")))
+                            else:
+                                pass
+                        except (AttributeError, ValueError):
+                            pass
+                    nhl_games_played.append(games_played)
+                    nhl_goals.append(goals)
+                    nhl_assists.append(assists)
+                    nhl_total_points.append(total_points)
+                    date_of_birth.append(age)
+                    height.append(heights)
+                    seasons.append(season)
+                    leagues.append(league)
+                except AttributeError:
+                    pass
+            except (AttributeError, TypeError):
+                pass
+    stats = {"Player": players,"NHL Games Played": nhl_games_played, "NHL Goals": nhl_goals,
+            "NHL Assists": nhl_assists, "NHL Total Points": nhl_total_points, "Height": height, "Date of Birth":date_of_birth}
+    stats = position_converter(stats)
+    stats = age_converter(stats)
+    stats = pd.DataFrame.from_dict(stats)
+    return stats
+
+from datetime import datetime
 def link_scraper(link):
     source = requests.get(link)
     return BeautifulSoup(source.text, "html.parser")
 
-###### Used to retrieve the correct link based on season and league
 def link_builder(league, season):
     link = 'https://www.eliteprospects.com/league/%s/stats/%s'%(league, season)
     return link
 
-
-####### Used to switch pages within a league's season
 def page_retriever(link):
     links = [link]
     more = True
@@ -36,138 +108,335 @@ def page_retriever(link):
                 links.append(link)
                 more = True
     return links
-    
-    
-#####Also redundant throughout project. I did the replace portion because I haven't looked into Kwargs yet
-def text(row, tag, classes, replace):
-    if replace == "replace":
-        return row.find(tag, class_=classes).get_text().replace("\n", "")
-    else:
-        return row.find(tag, class_=classes).get_text().strip()
-        
-        
-#############################################################################################################################
-# EP puts birthdate, height, and NHL information on a seperate page. This function is intended to access each player's
-# hyperlink, extract the relevant data, and add that data to a corresponding vector. Note that some rows on EP are "nameless"
-# based on player trades through the year. Trying to scrape a non-existent data-cell results in an AttributeError, so exceptions 
-# are used to bypass if applicable.
-#############################################################################################################################  
 
-def height_and_chel(row):
-    link = row.find("a")
-    link = link['href']
-    sou_p = link_scraper(link)
-    classes = sou_p.find("div", class_="ep-container mt-4")
-    height = classes.find("div", class_="order-6 order-sm-3 ep-list__item ep-list__item--col-2 ep-list__item--in-card-body ep-list__item--is-compact")
-    height = height.find("div", class_="col-xs-12 col-18 text-right p-0 ep-text-color--black").get_text().strip()
-    age = classes.find("div", class_ = "order-0 order-sm-0 ep-list__item ep-list__item--col-2 ep-list__item--in-card-body ep-list__item--is-compact")
-    age = age.find("div", class_ = "col-xs-12 col-17 text-right p-0 ep-text-color--black").get_text().strip()
-    try:
-        league_stats = classes.find("div", {"id": "league-stats"})
-        rows = league_stats.find_all("tr")
-        nhl_data = []
-        games_played = 0
-        goals = 0
-        assists = 0
-        total_points = 0
-        for row in rows:
-            try: 
-                if text(row, "td", "league", "strip") == "NHL":
-                    games_played += int(float(text(row, "td", "regular gp", "strip")))
-                    goals += int(float(text(row, "td", "regular g", "strip")))
-                    assists += int(float(text(row, "td", "regular a", "strip")))
-                    total_points += int(float(text(row, "td", "regular tp", "strip")))
-                else:
-                    pass
-            except (AttributeError, ValueError):
-                pass
-        nhl_data.extend([age, height, games_played, goals, assists, total_points])
-        return nhl_data
-    except AttributeError:
-        return [age, height, "", "", "", ""]
+def age_converter(i):
+    date_of_birth = []
+    for x in i["Date of Birth"]:
+        try:
+            if x == "":
+                date_of_birth.append(x)
+            else:
+                new_x = x.replace(",","")
+                date = datetime.strptime(new_x,'%b %d %Y').date()
+                date_of_birth.append(str(date))
+        except ValueError:
+            date_of_birth.append("")
+    i["Date of Birth"] = date_of_birth
+    return i
 
-
-#####################################################################################################
-# This is the main portion of the scraper. It takes a league and a season, and scrapes the data for 
-# height, age, games played, goals, assists, points per game, and NHL totals.
-#####################################################################################################
-
-def scrape(league, year):
-    season = {}
+def position_converter(dictionary):
+    position = []
     players = []
-    teams = []
-    games_played =[]
-    goals = []
-    assists = []
-    points = []
-    ppg = []
-    height = []
-    age = []
-    nhl_gp = []
-    nhl_goals = []
-    nhl_assists = []
-    nhl_tp = []
-    link = link_builder(league, year)
-    pages = page_retriever(link)
-    for i in pages:
-        soup = link_scraper(i)
-        table = soup.find("div", {"id": "skater-stats"})
-        rows = table.find_all("tr", class_= None)
-        for row in rows[1:]:
-            try:
-                player = text(row, "td", "player", "replace")
-                if player =="\xa0":
-                    pass
-                else:
-                    players.append(player)
-                    team = text(row, "td", "team", "strip")
-                    teams.append(team)
-                    gp = text(row, "td", "gp", "strip")
-                    games_played.append(gp)
-                    g = text(row, "td", "g", "strip")
-                    goals.append(g)
-                    a = text(row, "td", "a", "strip")
-                    assists.append(a)
-                    p = text(row, "td", "tp sorted", "strip")
-                    points.append(p )
-                    pointspergame = text(row, "td", "ppg", "strip")
-                    ppg.append(pointspergame)
-                    nhl_data = height_and_chel(row)
-                    age.append(nhl_data[0])
-                    height.append(nhl_data[1])
-                    nhl_gp.append(nhl_data[2])
-                    nhl_goals.append(nhl_data[3])
-                    nhl_assists.append(nhl_data[4])
-                    nhl_tp.append(nhl_data[5])          
-            except AttributeError:
-                team = text(row, "td", "team", "strip")
-                teams.append(team)
-                gp = text(row, "td", "gp", "strip")
-                games_played.append(gp)
-                g = text(row, "td", "g", "strip")
-                goals.append(g)
-                a = text(row, "td", "a", "strip")
-                assists.append(a)
-                p = text(row, "td", "tp sorted", "strip")
-                points.append(p)
-                height.append("")
-                age.append("")
-                nhl_gp.append("")
-                nhl_goals.append("")
-                nhl_assists.append("")
-                nhl_tp.append("")
-                pointspergame = text(row, "td", "ppg", "strip")
-                ppg.append(pointspergame)
-                players.append("")
-    season = {"player": players, "teams": teams, "games_played": games_played, "goals":goals, "assists":assists, "points":points, "ppg": ppg, "age": age, "height":height, "nhl_gp":nhl_gp,"nhl_goals":nhl_goals,
-         "nhl_assists":nhl_assists,"nhl_tp":nhl_tp, "league": league, "season": year}
-    return season
-    
-#####################################################
-# 
-# An extra few functions for Pandas manipulation
-#
-#####################################################
+    for i in dictionary["Player"]:
+        if "(C)" in i:
+            position.append("Center")
+            players.append(i.replace(" (C)", ""))
+        elif "(D)" in i: 
+            position.append("Defense")
+            players.append(i.replace(" (D)", ""))
+        elif "(RW)" in i:
+            position.append("Right Wing")
+            players.append(i.replace(" (RW)", ""))
+        elif "(LW)" in i:
+            position.append("Left Wing")
+            players.append(i.replace(" (LW)", ""))
+        elif "(RW/LW)" in i:
+            position.append("Right Wing/Left Wing")
+            players.append(i.replace(" (RW/LW)", ""))
+        elif "(W/C)" in i:
+            position.append("Wing/Center")
+            players.append(i.replace(" (W/C)", ""))
+        elif "(C/W)" in i:
+            position.append("Center/Wing")
+            players.append(i.replace(" (C/W)", ""))
+        elif "(LW/RW)" in i:
+            position.append("Left Wing/Right Wing")
+            players.append(i.replace(" (LW/RW)",""))
+        elif "(LW/C)" in i:
+            position.append("Left Wing/Center")
+            players.append(i.replace(" (LW/C)", ""))
+        elif "(RW/C)" in i:
+            position.append("Right Wing/Center")
+            players.append(i.replace(" (RW/C)", ""))
+        elif "(C/RW)" in i:
+            position.append("Center/ Right Wing")
+            players.append(i.replace(" (C/RW)", ""))
+        elif "(C/LW)" in i:
+            position.append("Center/Left Wing")
+            players.append(i.replace(" (C/LW)", ""))
+        elif "(F)" in i:
+            players.append(i.replace(" (F)", ""))
+            position.append("Forward")
+        elif "(D/F)" in i:
+            players.append(i.replace(" (D/F)", ""))
+            position.append("Defense/Forward")
+        elif "(F/D)" in i:
+            players.append(i.replace(" (F/D)", ""))
+            position.append("Forward/Defense")
+        elif "(C/D)" in i:
+            players.append(i.replace(" (C/D)", ""))
+            position.append("Center/Defense")
+        elif "(RW/D)" in i:
+            players.append(i.replace(" (RW/D)", ""))
+            position.append("Right Wing/Defense")
+        elif "(LW/D)" in i:
+            players.append(i.replace(" (LW/D)", ""))
+            position.append("Left Wing/Defense")
+        elif "(D/C)" in i:
+            players.append(i.replace(" (D/C)", ""))
+            position.append("Defense/Center")
+        elif "(D/RW)" in i:
+            players.append(i.replace(" (D/RW)", ""))
+            position.append("Defense/Right Wing")
+        elif "(D/LW)" in i:
+            players.append(i.replace(" (D/LW)", ""))
+            position.append("Defense/Left Wing")
+        elif "(W/D)" in i:
+            players.append(i.replace(" (W/D)", ""))
+            position.append("Wing/Defense")
+        elif "(D/W)" in i:
+            players.append(i.replace(" (D/W)", ""))
+            position.append("Defense/Wing")
+        else:
+            players.append(i)
+            position.append("")
+    player = []
+    for i in players:
+        x = remove_accents(i)
+        player.append(x)
+    dictionary["Player"] = player        
+    dictionary["Position"] = position
+    return dictionary
+def ohl_seasons(season):
+    seasons_dict = {"1998-1997":"4","1998-1999":"6","1999-2000":"9", "2000-2001": "11", "2001-2002": "14", "2002-2003" :"17",
+               "2003-2004": "21", "2004-2005": "24", "2005-2006": "26", "2006-2007": "29", "2007-2008": "32", "2008-2009":"35",
+               "2009-2010": "38", "2010-2011": "42", "2011-2012": "44", "2012-2013":"46", "2013-2014": "49", "2014-2015": "51",
+               "2015-2016": "54", "2016-2017": "56", "2017-2018": "60", "2018-2019": "63", "2019-2020": "68"}
+    link = "https://lscluster.hockeytech.com/feed/?feed=modulekit&view=schedule&key=2976319eb44abe94&fmt=json&client_code=ohl&lang=en&season_id=%s&team_id=&league_code=&fmt=json" %(seasons_dict[season])
+    link = requests.get(link)
+    data = link.json()
+    games = data["SiteKit"]["Schedule"]
+    game_ids = []
+    for i in games:
+        game_ids.append(i["game_id"])
+    return game_ids
 
-def df_converter(league_dict):
-    return pd.DataFrame.from_dict(league_dict)
+def whl_seasons(season):
+    seasons_dict = {"1996-1997":"204", "1997-1998":"206","1998-1999": "209", "1999-2000":"211" ,"2000-2001":"213","2001-2002":"215","2002-2003":"217",
+                   "2003-2004":"220", "2004-2005":"223", "2005-2006":"225", "2006-2007":"227", "2007-2008":"229", "2008-2009":"231", "2009-2010":"234",
+                   "2010-2011":"236", "2011-2012":"238", "2012-2013":"242", "2013-2014":"245", "2014-2015":"249", "2015-2016":"251",
+                   "2016-2017":"257", "2017-2018":"262", "2018-2019":"266", "2019-2020":"270", "2020-2021":"273"}
+    link = "https://lscluster.hockeytech.com/feed/?feed=modulekit&view=schedule&key=41b145a848f4bd67&fmt=json&client_code=whl&lang=en&season_id=%s&team_id=&league_code=&fmt=json" %(seasons_dict[season])
+    stuff = requests.get(link)
+    data = stuff.json()
+    games = data["SiteKit"]["Schedule"]
+    game_ids = []
+    for i in games:
+        game_ids.append(i["game_id"])
+    return game_ids
+
+def qmjhl_seasons(season):
+    seasons_dict = {"1996-1997":"146", "1997-1998":"151","1998-1999":"152", "1999-2000":"154" ,"2000-2001":"156","2001-2002":"158","2002-2003":"84",
+                   "2003-2004":"86", "2004-2005":"88", "2005-2006":"90", "2006-2007":"104", "2007-2008":"160", "2008-2009":"162", "2009-2010":"164",
+                   "2010-2011":"82", "2011-2012":"168", "2012-2013":"171", "2013-2014":"175", "2014-2015":"178", "2015-2016":"181",
+                   "2016-2017":"184", "2017-2018":"187", "2018-2019":"190", "2019-2020":"193", "2020-2021":"196"}
+    link = "https://lscluster.hockeytech.com/feed/?feed=modulekit&view=schedule&key=f322673b6bcae299&fmt=json&client_code=lhjmq&lang=en&season_id=196&team_id=&league_code=&fmt=json"
+    stuff = requests.get(link)
+    data = stuff.json()
+    games = data["SiteKit"]["Schedule"]
+    game_ids = []
+    for i in games:
+        game_ids.append(i["game_id"])
+    return game_ids
+
+            
+def game_scrape(league, season):
+    if league == "OHL":
+        games  = ohl_seasons(season)
+    elif league == "WHL":
+        games = whl_seasons(season)
+    else:
+        games = qmjhl_seasons(season)
+    season_df = pd.DataFrame()
+    dead_games =[]
+    for string in games:
+        try:
+            if league == "OHL":
+                base_link = "https://cluster.leaguestat.com/feed/index.php?feed=gc&key=2976319eb44abe94&client_code=ohl&game_id=%s&lang_code=en&fmt=json&tab=gamesummary" %(string)
+            elif league == "WHL":
+                base_link = "https://cluster.leaguestat.com/feed/index.php?feed=gc&key=41b145a848f4bd67&client_code=whl&game_id=%s&lang_code=en&fmt=json&tab=gamesummary" %(string)
+            else:
+                base_link = "https://cluster.leaguestat.com/feed/index.php?feed=gc&key=f322673b6bcae299&client_code=lhjmq&game_id=%s&lang_code=en&fmt=json&tab=gamesummary" %(string)
+            page = requests.get(base_link)
+            data = page.json()
+            base = data["GC"]["Gamesummary"]["home_team_lineup"]["players"]
+            home_players = []
+            home_ids = []
+            home_team = []
+            home = []
+            for i in base:
+                home_players.append(i["first_name"] + " " + i["last_name"])
+                home_ids.append(i["player_id"])
+                home_team.append(data["GC"]["Gamesummary"]["home"]["name"])
+                home.append(1)
+            home_data ={"Player ID" : home_ids, "Player" : home_players, "Team": home_team ,"Home": home}
+            base = data["GC"]["Gamesummary"]["visitor_team_lineup"]["players"]
+            away_players = []
+            away_ids = []
+            away_team = []
+            away = []
+            for i in base:
+                away_players.append(i["first_name"] + " " + i["last_name"])
+                away_ids.append(i["player_id"])
+                away_team.append(data["GC"]["Gamesummary"]["visitor"]["name"])
+                away.append(0)
+            away_data = {"Player ID": away_ids, "Player" : away_players, "Team": away_team, "Home": away}
+            away_df = pd.DataFrame.from_dict(away_data)
+            home_df = pd.DataFrame.from_dict(home_data)
+            league_df = pd.concat([home_df, away_df]).set_index("Player ID", drop=True)
+            league_df["Games Played"] = 1
+            league_df[["EV G","EV A1","EV A2","PP G","PP A1","PP A2", "EN G", "EN A1", "EN A2", "Team Goals E", "Team Goals PP", "Team EV A1", "Team PP A1"]] = 0 
+            for i in data["GC"]["Gamesummary"]["goals"]:
+                goal_scorer = i["goal_scorer"]["player_id"]
+                team = i["home"]
+                try:
+                    if i["assist1_player"]["player_id"] == None:
+                        first_assist_player = ""
+                    else:
+                        first_assist_player = i["assist1_player"]["player_id"]
+                except KeyError:
+                    pass
+                try:
+                    if i["assist2_player"]["player_id"] == None:
+                        second_assist_player = ""
+                    else:
+                        second_assist_player = i["assist2_player"]["player_id"]
+                except KeyError:
+                    pass
+                if i["power_play"] == "1":
+                    league_df.loc[goal_scorer,"PP G"] +=1
+                    if team == 1:
+                        league_df.loc[(league_df["Home"] == 1), "Team Goals PP"] += 1
+                    else:
+                        league_df.loc[(league_df["Home"] == 0), "Team Goals PP"] +=1
+                    try:
+                        if first_assist_player == "":
+                            pass
+                        else:
+                            league_df.loc[first_assist_player, "PP A1"] += 1
+                            if team == 1:
+                                league_df.loc[(league_df["Home"] == 1), "Team PP A1"] += 1
+                            else:
+                                league_df.loc[(league_df["Home"] == 0), "Team PP A1"] += 1
+                                
+                    except KeyError:
+                        pass
+                    try:
+                        if second_assist_player == "":
+                            pass
+                        else:
+                            league_df.loc[second_assist_player, "PP A2"] +=1
+                    except KeyError:
+                        pass    
+                elif i["empty_net"] == "1":
+                    try:
+                        league_df.loc[goal_scorer, "EN G"] +=1
+                    except KeyError:
+                        pass
+                    try:
+                        if first_assist_player == "":
+                            pass
+                        else:
+                            league_df.loc[first_assist_player, "EN A1"] +=1
+                    except KeyError:
+                        pass
+                    try:
+                        if second_assist_player == "":
+                            pass
+                        else:
+                            league_df.loc[second_assist_player, "EN A2"] +=1
+                    except KeyError:
+                        pass
+                else:
+                    league_df.loc[goal_scorer, "EV G"] +=1
+                    if team == 1:
+                        league_df.loc[(league_df["Home"] == 1), "Team Goals E"] +=1 
+                    else:
+                        league_df.loc[(league_df["Home"] == 0),"Team Goals E"] += 1
+                    try:
+                        if first_assist_player == "":
+                            pass
+                        else:
+                            league_df.loc[first_assist_player, "EV A1"] +=1
+                            if team == 1:
+                                league_df.loc[(league_df["Home"] == 1), "Team EV A1"] += 1
+                            else:
+                                league_df.loc[(league_df["Home"] == 0), "Team EV A1"] +=1
+                    except KeyError:
+                        pass
+                    try:
+
+                        if second_assist_player == "":
+                            pass
+                        else:
+                            league_df.loc[second_assist_player, "EV A2"] +=1
+                    except KeyError:
+                        pass
+            season_df = pd.concat([league_df, season_df])
+        except TypeError:
+            dead_games.append(string)
+    season_df = season_df.reset_index(drop=False)
+    season_df = season_df.set_index(["Player ID", "Player", "Team"], drop = True)
+    season_df = season_df.groupby(["Player ID", "Player"]).sum()
+    season_df = team_goals_calculator(season_df)
+    season_df["Season"] = season
+    season_df["League"] = league
+    season_df[["Height","Date of Birth", "Position"]] = ""
+    season_df = season_df.drop(["Home"], axis = 1)
+    season_df[["NHL Games Played", "NHL G", "NHL A", "NHL TP"]] = 0
+    season_df = season_df.reset_index(drop = False)
+    return season_df
+
+def full_nhl_scrape(league, season):
+    df_add = ep_data(league, season)
+    df = game_scrape(league, season)
+    try:
+        df = nhl_stats_add(df, df_add)
+    except AttributeError:
+        print("Index Error, check both dataframes")
+        return df_add
+    return df
+  
+  def team_goals_calculator(df):
+    df["Percentage of Team EV Goals"] = df["EV G"]/df["Team Goals E"]
+    df["Percentage of Team EV A1"] = df["EV A1"]/df["Team EV A1"]
+    return df
+    
+def remove_accents(raw_text):
+    raw_text = re.sub(u"[àáâãäå]", 'a', raw_text)
+    raw_text = re.sub(u"[èéêë]", 'e', raw_text)
+    raw_text = re.sub(u"[ìíîï]", 'i', raw_text)
+    raw_text = re.sub(u"[òóôõöø]", 'o', raw_text)
+    raw_text = re.sub(u"[ùúûü]", 'u', raw_text)
+    raw_text = re.sub(u"[ýÿ]", 'y', raw_text)
+    raw_text = re.sub(u"[ß]", 'ss', raw_text)
+    raw_text = re.sub(u"[ñ]", 'n', raw_text)
+    return raw_text
+
+
+def nhl_stats_add(main_df, add_df):
+    main_df = main_df.copy()
+    add_df = add_df.set_index("Player", drop= True)
+    for i in range(0,len(main_df)):
+        try:
+            player = main_df.loc[i,"Player"]
+            main_df.loc[i,"NHL Games Played"] += add_df.loc[player,"NHL Games Played"]
+            main_df.loc[i,"NHL G"] += add_df.loc[player, "NHL Goals"]
+            main_df.loc[i, "NHL A"] += add_df.loc[player, "NHL Assists"]
+            main_df.loc[i, "NHL TP"] += add_df.loc[player, "NHL Total Points"]
+            main_df.loc[i, "Height"] = add_df.loc[player, "Height"]
+            main_df.loc[i, "Date of Birth"] = add_df.loc[player, "Date of Birth"]
+            main_df.loc[i, "Position"] = add_df.loc[player, "Position"]
+        except KeyError:
+            pass
+    return main_df
